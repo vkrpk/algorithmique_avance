@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Algorithm\Dijkstra;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\UX\Chartjs\Builder\ChartBuilderInterface;
@@ -170,6 +171,23 @@ class HomeController extends AbstractController
         }, $chromosome);
     }
 
+    private function mutation (array $population, int $rate)
+    {
+        for ($i = 0; $i < count($population) - 1; $i++) {
+            dd(count($population[$i]['parcours']['ville']));
+            if ((int) round(mt_rand() / mt_getrandmax() * 100) < $rate) {
+                $min = 1;
+                $max = count($population[$i]) - 2;
+
+                $this->array_swap($population, rand($min, $max), rand($min, $max));
+            }
+        }
+    }
+
+    public function array_swap(&$array,$swap_a,$swap_b){
+        list($array[$swap_a],$array[$swap_b]) = array($array[$swap_b],$array[$swap_a]);
+    }
+
     public function breedingAndCrossbreeding (array $chromosomes, int $crossoverPoint)
     {
 //        $crossoverPoint = count($chromosomes[1]['parcours']) / 2;
@@ -184,15 +202,19 @@ class HomeController extends AbstractController
 
         $i = 1;
 
-        while (count($cities) - 1 !== count(array_unique($cities))) {
-            $i++;
+        try {
+            while (count($cities) - 1 !== count(array_unique($cities))) {
+                $i++;
 
-            $modifiedChromosome = array_merge($firstPart, array_slice($chromosomes[$i]['parcours'], $crossoverPoint,  count($chromosomes[$i]['parcours']) - $crossoverPoint));
+                $modifiedChromosome = array_merge($firstPart, array_slice($chromosomes[$i]['parcours'], $crossoverPoint,  count($chromosomes[$i]['parcours']) - $crossoverPoint));
+            }
+        } catch (\Exception $exception) {
+            dd('reproduction et croisement : Impossible de fusionner le meilleur résultat avec une autre séquence sans passer deux fois par la même ville.');
         }
 
         $nouvellePopulationDeChromosomes = $this->keepsTheBest($this->createChildren($modifiedChromosome, 100), 25);
 
-        dd($nouvellePopulationDeChromosomes);
+        dd($this->mutation($nouvellePopulationDeChromosomes, 100));
     }
 
     public function algo_genetique ()
@@ -240,35 +262,183 @@ class HomeController extends AbstractController
         return $chromosomes;
     }
 
+    private function heuristic($node, $goal) {
+        return abs($node[0] - $goal[0]) + abs($node[1] - $goal[1]);
+    }
+
+    public function getDistance (array $start, array $end) {
+        $distanceX = $start[0] - $end[0];
+        $distanceY = $start[1] - $end[1];
+
+        return (int) round(sqrt($distanceX**2 + $distanceY**2)) * 10;
+    }
+
+    public function pathStep (array $currentPosition)
+    {
+        $adjacentPositions = $this->getAdjacentPositions($currentPosition);
+        foreach ($adjacentPositions as $adjacentPosition) {
+
+        }
+
+        if ($currentPosition ) {
+            throw new \Exception('Chemin trouvé');
+        }
+    }
+
+    private function computeDistances ($grid) {
+
+    }
+
+    private function getAdjacentPositions (array $currentPosition)
+    {
+        $directions = [[0, 1], [1, 0], [-1, 1], [0, -1]];
+        $adjPositions = [];
+
+        foreach ($directions as $direction) {
+            $adjX = $currentPosition[0] + $direction[0];
+            $adjY = $currentPosition[1] + $direction[1];
+
+            $adjPositions[] = [$adjX, $adjY];
+        }
+
+        return $adjPositions;
+    }
+
+    public function fillArrayWith (array $grid, bool|int $value) {
+        $array = [];
+        for ($i = 0; $i < count($grid); $i++) {
+            for ($j = 0; $j < count($grid[0]); $j++) {
+                $array[$i][$j] = $value;
+            }
+        }
+
+        return $array;
+    }
+
+    public function algo_dijkstra (array $grid, array $goal)
+    {
+        $start = [0, 0];
+
+        $p = $this->fillArrayWith($grid, PHP_INT_MAX);
+        $visited = $this->fillArrayWith($grid, false);
+
+        $p[$start[0]][$start[1]] = 0;
+
+        $q = [$start];
+
+        while (!empty($q)) {
+            $minDistance = PHP_INT_MAX;
+            $minIndex = -1;
+
+            for ($i = 0; $i < count($q); $i++) {
+                $node = $q[$i];
+                if ($p[$node[0]][$node[1]] < $minDistance) {
+                    $minDistance = $p[$node[0]][$node[1]];
+                    $minIndex = $i;
+                }
+            }
+
+            if ($minIndex === -1) {
+                break;
+            }
+
+            $current = $q[$minIndex];
+            array_splice($q, $minIndex, 1);
+
+            $row = $current[0];
+            $col = $current[1];
+
+            if ($visited[$row][$col]) {
+                continue;
+            }
+
+            $visited[$row][$col] = true;
+
+            if ($row === $goal[0] && $col === $goal[1]) {
+                break;
+            }
+
+            $directions = [[-1, 0], [0, 1], [1, 0], [0, -1]];
+
+            foreach ($directions as $dir) {
+                $newRow = $row + $dir[0];
+                $newCol = $col + $dir[1];
+
+                if ($newRow >= 0 && $newRow < count($grid) &&
+                    $newCol >= 0 && $newCol < count($grid[0])) {
+
+                    if ($grid[$newRow][$newCol] === 1) { // chemin praticable
+                        $newDist = $p[$row][$col] + 1;
+                        if ($newDist < $p[$newRow][$newCol]) {
+                            $p[$newRow][$newCol] = $newDist;
+
+                            if (!$visited[$newRow][$newCol]) {
+                                $q[] = [$newRow, $newCol];
+                            }
+//                            dump($q);
+                        }
+                    }
+                }
+            }
+        }
+
+        dd($this->displayMultidimensionalArray($p), $this->displayMultidimensionalArray($visited));
+    }
 
     #[Route('/', name: 'home')]
-    public function index(ChartBuilderInterface $chartBuilder) {
+    public function index(ChartBuilderInterface $chartBuilder)
+    {
+        $grid = [
+            [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0, 1, 1, 1, 1, 0],
+            [0, 1, 0, 1, 0, 0, 0, 0, 1, 0],
+            [0, 1, 0, 1, 1, 1, 1, 0, 1, 0],
+            [0, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+            [0, 1, 0, 1, 0, 0, 1, 0, 1, 0],
+            [0, 1, 0, 1, 1, 0, 1, 0, 1, 0],
+            [0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+            [0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        ];
 
-        $this->algo_genetique();
+        $goal = [0, 0];
+
+        while ($grid[$goal[0]][$goal[1]] !== 1) {
+            $goal = [random_int(0, 9), random_int(0, 9)];
+        }
+
+        dd($goal);
+        $this->algo_dijkstra($grid, $goal);
+
+//        $start = [0, 0];
+
+//        $grid[$start[0]][$goal[1]] = 0;
+//        $grid[$start[0]][$goal[1]] = 0;
+//
+//        $Dijkstra = new Dijkstra($grid);
+//
+//        $this->algo_genetique();
 
 //        $pieces = [2, 5, 10, 50, 100];
 //
-////        dd($this->rendu_monnaie_naive($pieces, 150));
+//       dd($this->rendu_monnaie_naive($pieces, 150));
 //
 //        $resultat20 = $this->rendu_monnaie_dynamique($pieces, 20);
 //        $resultat70 = $this->rendu_monnaie_dynamique($pieces, 70);
 //
 //        return $this->render('base.html.twig', compact('resultat20', 'resultat70'));
 //
-//
 //        $this->rendreLeMoinsDeMonnaiePossible(1462, 1500);
 //
 //        $chart = $chartBuilder->createChart(Chart::TYPE_LINE);
 //
 //        $i = 0;
-//
-//
+
 //        $tableOfOneHundredRandomNumbers = array_map(function ($value) {
 //            static $i = 0;
 //            $i++;
 //            return $i;
 //        }, array_fill(0, 10, null));
-//
 //
 //        shuffle($tableOfOneHundredRandomNumbers);
 //        dd($tableOfOneHundredRandomNumbers);
@@ -286,9 +456,7 @@ class HomeController extends AbstractController
 //
 //        $time_elapsed_secs = ($time_end - $startNormalSearch)/60;
 
-
 //        dd($this->triABulle($tableOfOneHundredRandomNumbers));
-
 
 //        $chart->setData([
 //            'labels' => ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
@@ -316,6 +484,16 @@ class HomeController extends AbstractController
 //            'chart' => $chart,
         ]);
     }
+
+    public function displayMultidimensionalArray (array $multidimensionalArray) { {
+        $colcount = count($multidimensionalArray[0]);
+        for ($c = 0; $c < $colcount; $c++) {
+            foreach ($multidimensionalArray as $row) {
+                echo $row[$c] . "|";
+            }
+            echo "<hr>";
+        }
+    }}
 
     private function keepsTheBest(array $list, int $int): array
     {
